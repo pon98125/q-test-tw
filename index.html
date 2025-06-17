@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poop Dodge Game</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #gameContainer {
+            position: relative;
+        }
+        canvas {
+            border: 2px solid #000;
+            background-color: white;
+        }
+        #gameOverScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        #nameInput {
+            margin: 10px 0;
+            padding: 5px;
+            font-size: 18px;
+        }
+        button {
+            padding: 8px 16px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        #rankings {
+            margin-top: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="gameOverScreen">
+            <h1>Game Over!</h1>
+            <p id="finalTime">Your time: 0.00</p>
+            <label for="nameInput">Enter your name:</label>
+            <input type="text" id="nameInput" maxlength="10">
+            <button id="submitScore">Submit Score</button>
+            <div id="rankings">
+                <h2>Top 5 Rankings</h2>
+                <ol id="rankingsList"></ol>
+            </div>
+            <button id="restartButton">Restart Game</button>
+        </div>
+    </div>
+
+    <script>
+        // Game constants
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 600;
+        const PLAYER_SIZE = 50;
+        const POOP_SIZE = 40;
+        const PLAYER_SPEED = 8;
+        const POOP_SPEED = 5;
+
+        // Game variables
+        let canvas = document.getElementById('gameCanvas');
+        let ctx = canvas.getContext('2d');
+        let player = {
+            x: CANVAS_WIDTH / 2 - PLAYER_SIZE / 2,
+            y: CANVAS_HEIGHT - PLAYER_SIZE - 10,
+            width: PLAYER_SIZE,
+            height: PLAYER_SIZE,
+            speed: PLAYER_SPEED,
+            direction: 0,
+            animationFrame: 0
+        };
+        
+        let poops = [];
+        let gameOver = false;
+        let startTime = Date.now();
+        let elapsedTime = 0;
+        let keysPressed = {};
+        let rankings = [];
+        
+        // Load rankings from localStorage
+        function loadRankings() {
+            const savedRankings = localStorage.getItem('poopDodgeRankings');
+            if (savedRankings) {
+                rankings = JSON.parse(savedRankings);
+            }
+            displayRankings();
+        }
+        
+        // Save rankings to localStorage
+        function saveRanking(name, score) {
+            rankings.push({ name, score });
+            rankings.sort((a, b) => b.score - a.score);
+            localStorage.setItem('poopDodgeRankings', JSON.stringify(rankings));
+            displayRankings();
+        }
+        
+        // Display rankings in the game over screen
+        function displayRankings() {
+            const rankingsList = document.getElementById('rankingsList');
+            rankingsList.innerHTML = '';
+            
+            const topRankings = rankings.slice(0, 5);
+            topRankings.forEach(ranking => {
+                const li = document.createElement('li');
+                li.textContent = `${ranking.name}: ${ranking.score.toFixed(2)}`;
+                rankingsList.appendChild(li);
+            });
+        }
+        
+        // Create a new poop object
+        function createPoop() {
+            return {
+                x: Math.random() * (CANVAS_WIDTH - POOP_SIZE),
+                y: -POOP_SIZE,
+                width: POOP_SIZE,
+                height: POOP_SIZE,
+                speed: POOP_SPEED
+            };
+        }
+        
+        // Initialize the game
+        function init() {
+            poops = [createPoop()];
+            gameOver = false;
+            startTime = Date.now();
+            player.x = CANVAS_WIDTH / 2 - PLAYER_SIZE / 2;
+            player.animationFrame = 0;
+            player.direction = 0;
+            
+            document.getElementById('gameOverScreen').style.display = 'none';
+            document.getElementById('nameInput').value = '';
+            
+            // Start the game loop
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Draw the player
+        function drawPlayer() {
+            // Calculate animation offsets
+            const legOffset = player.direction !== 0 ? 5 * Math.sin(player.animationFrame * 2) : 0;
+            const armOffset = player.direction !== 0 ? 5 * Math.sin(player.animationFrame * 2 + Math.PI) : 0;
+            
+            // Colors
+            const skinColor = '#FFDAB9';
+            const shirtColor = '#0000FF';
+            const pantsColor = '#000080';
+            
+            // Head
+            const headSize = PLAYER_SIZE / 2.5;
+            const headX = player.x + PLAYER_SIZE / 2;
+            const headY = player.y + headSize / 2;
+            ctx.fillStyle = skinColor;
+            ctx.beginPath();
+            ctx.arc(headX, headY, headSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Eyes
+            const eyeSize = headSize / 8;
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(headX - headSize / 4, headY - headSize / 8, eyeSize, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(headX + headSize / 4, headY - headSize / 8, eyeSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(headX - headSize / 4, headY - headSize / 8, eyeSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(headX + headSize / 4, headY - headSize / 8, eyeSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Smile
+            ctx.beginPath();
+            ctx.arc(headX, headY + headSize / 8, headSize / 4, 0, Math.PI);
+            ctx.stroke();
+            
+            // Torso
+            const torsoWidthTop = PLAYER_SIZE / 1.5;
+            const torsoWidthBottom = PLAYER_SIZE / 2;
+            const torsoHeight = PLAYER_SIZE / 2.5;
+            const torsoX = player.x + (PLAYER_SIZE - torsoWidthTop) / 2;
+            const torsoY = headY + headSize / 2;
+            
+            ctx.fillStyle = shirtColor;
+            ctx.beginPath();
+            ctx.moveTo(torsoX, torsoY);
+            ctx.lineTo(torsoX + torsoWidthTop, torsoY);
+            ctx.lineTo(torsoX + torsoWidthTop + (torsoWidthBottom - torsoWidthTop) / 2, torsoY + torsoHeight);
+            ctx.lineTo(torsoX - (torsoWidthBottom - torsoWidthTop) / 2, torsoY + torsoHeight);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Legs
+            const legWidth = torsoWidthBottom / 3;
+            const legHeight = PLAYER_SIZE / 2.5;
+            const leftLegX = torsoX + (torsoWidthBottom - legWidth * 2) / 3;
+            const rightLegX = torsoX + torsoWidthBottom - legWidth - (torsoWidthBottom - legWidth * 2) / 3;
+            const legY = torsoY + torsoHeight;
+            
+            // Left leg with animation
+            ctx.fillStyle = pantsColor;
+            ctx.beginPath();
+            ctx.moveTo(leftLegX, legY);
+            ctx.lineTo(leftLegX + legWidth, legY);
+            ctx.lineTo(leftLegX + legWidth - legOffset, legY + legHeight);
+            ctx.lineTo(leftLegX - legOffset, legY + legHeight);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Right leg with animation
+            ctx.beginPath();
+            ctx.moveTo(rightLegX, legY);
+            ctx.lineTo(rightLegX + legWidth, legY);
+            ctx.lineTo(rightLegX + legWidth + legOffset, legY + legHeight);
+            ctx.lineTo(rightLegX + legOffset, legY + legHeight);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Feet
+            const footWidth = legWidth * 1.2;
+            const footHeight = legHeight / 4;
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.ellipse(leftLegX - legOffset, legY + legHeight, footWidth / 2, footHeight / 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(rightLegX + legOffset + legWidth, legY + legHeight, footWidth / 2, footHeight / 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // Draw a poop
+        function drawPoop(poop) {
+            // Main body
+            ctx.fillStyle = '#8B4513';
+            ctx.beginPath();
+            ctx.arc(poop.x + poop.width / 2, poop.y + poop.height / 2, poop.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Top part
+            ctx.beginPath();
+            ctx.arc(poop.x + poop.width / 2, poop.y + poop.height / 4, poop.width / 3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Eyes
+            const eyeSize = poop.width / 8;
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(poop.x + poop.width / 3, poop.y + poop.height / 3, eyeSize, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(poop.x + 2 * poop.width / 3, poop.y + poop.height / 3, eyeSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Pupils
+            const pupilSize = eyeSize / 2;
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(poop.x + poop.width / 3, poop.y + poop.height / 3, pupilSize, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(poop.x + 2 * poop.width / 3, poop.y + poop.height / 3, pupilSize, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Smile
+            ctx.beginPath();
+            ctx.arc(poop.x + poop.width / 2, poop.y + poop.height / 2, poop.width / 4, 0, Math.PI);
+            ctx.stroke();
+        }
+        
+        // Check collision between player and poop
+        function checkCollision(player, poop) {
+            return player.x < poop.x + poop.width &&
+                   player.x + player.width > poop.x &&
+                   player.y < poop.y + poop.height &&
+                   player.y + player.height > poop.y;
+        }
+        
+        // Game loop
+        function gameLoop() {
+            // Clear the canvas
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            if (!gameOver) {
+                // Update player position
+                if (keysPressed['ArrowLeft']) {
+                    player.x = Math.max(0, player.x - player.speed);
+                    player.direction = -1;
+                    player.animationFrame += 0.2;
+                } else if (keysPressed['ArrowRight']) {
+                    player.x = Math.min(CANVAS_WIDTH - player.width, player.x + player.speed);
+                    player.direction = 1;
+                    player.animationFrame += 0.2;
+                } else {
+                    player.direction = 0;
+                    player.animationFrame = 0;
+                }
+                
+                // Update poops
+                for (let i = 0; i < poops.length; i++) {
+                    poops[i].y += poops[i].speed;
+                    
+                    // Check if poop is off screen
+                    if (poops[i].y > CANVAS_HEIGHT) {
+                        poops[i] = createPoop();
+                    }
+                    
+                    // Check for collision
+                    if (checkCollision(player, poops[i])) {
+                        gameOver = true;
+                        document.getElementById('gameOverScreen').style.display = 'flex';
+                        document.getElementById('finalTime').textContent = `Your time: ${elapsedTime.toFixed(2)}`;
+                        break;
+                    }
+                }
+                
+                // Add new poop occasionally
+                if (Math.random() < 0.01 && poops.length < 5) {
+                    poops.push(createPoop());
+                }
+                
+                // Update elapsed time
+                elapsedTime = (Date.now() - startTime) / 1000;
+            }
+            
+            // Draw everything
+            drawPlayer();
+            poops.forEach(drawPoop);
+            
+            // Draw timer
+            ctx.fillStyle = 'black';
+            ctx.font = '24px Arial';
+            ctx.fillText(`Time: ${elapsedTime.toFixed(2)}`, 10, 30);
+            
+            // Continue the game loop if not game over
+            if (!gameOver) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+        
+        // Event listeners
+        window.addEventListener('keydown', (e) => {
+            keysPressed[e.key] = true;
+            
+            // Restart game with R key
+            if (e.key === 'r' && gameOver) {
+                init();
+            }
+        });
+        
+        window.addEventListener('keyup', (e) => {
+            keysPressed[e.key] = false;
+        });
+        
+        document.getElementById('submitScore').addEventListener('click', () => {
+            const name = document.getElementById('nameInput').value.trim() || 'Anonymous';
+            saveRanking(name, elapsedTime);
+        });
+        
+        document.getElementById('restartButton').addEventListener('click', init);
+        
+        // Load rankings and start the game
+        loadRankings();
+        init();
+    </script>
+</body>
+</html>
